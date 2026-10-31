@@ -1,11 +1,16 @@
 #!/bin/bash
-# Builds "File Explorer.app" (release) next to this script.
+# Builds a universal "File Explorer.app" (release) next to this script.
 set -euo pipefail
 cd "$(dirname "$0")"
 
 APP="File Explorer.app"
-swift build -c release
-BIN="$(swift build -c release --show-bin-path)/FileExplorer"
+# Build each architecture and merge into a universal binary (Apple Silicon + Intel).
+ARM_BIN="$(swift build -c release --triple arm64-apple-macosx13.0 --show-bin-path)/FileExplorer"
+X86_BIN="$(swift build -c release --triple x86_64-apple-macosx13.0 --show-bin-path)/FileExplorer"
+swift build -c release --triple arm64-apple-macosx13.0
+swift build -c release --triple x86_64-apple-macosx13.0
+BIN="$(mktemp -d)/FileExplorer"
+lipo -create "$ARM_BIN" "$X86_BIN" -output "$BIN"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
