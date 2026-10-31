@@ -1,0 +1,18 @@
+// swift-tools-version:5.9
+import PackageDescription
+
+let package = Package(
+    name: "FileExplorer",
+    platforms: [.macOS(.v13)],
+    targets: [
+        .executableTarget(
+            name: "FileExplorer",
+            path: "Sources/FileExplorer",
+            linkerSettings: [
+                .linkedFramework("AppKit"),
+                .linkedFramework("Quartz"),
+                .linkedFramework("QuickLookThumbnailing"),
+            ]
+        )
+    ]
+)
