@@ -267,6 +267,7 @@ final class ExplorerViewController: NSViewController, NSSplitViewDelegate, NSMen
         switch location {
         case .folder(let u):
             if u.path == "/" || (try? u.resourceValues(forKeys: [.isVolumeKey]))?.isVolume == true { return .thisPC }
+            if CloudDrive.isRoot(u) != nil { return .home }
             if u.path == trashURL.path { return .home }
             return .dir(u.deletingLastPathComponent())
         case .search(let u, _): return .dir(u)
@@ -363,6 +364,9 @@ final class ExplorerViewController: NSViewController, NSSplitViewDelegate, NSMen
         ]
         for k in KnownFolder.allCases {
             items.append(ClosureMenuItem(k.title, image: IconFactory.knownGlyph(k)) { [weak self] in self?.navigate(to: .dir(k.url)) })
+        }
+        for c in CloudDrive.all {
+            items.insert(ClosureMenuItem(c.title, image: c.icon) { [weak self] in self?.navigate(to: .dir(c.url)) }, at: 2)
         }
         items.append(.separator())
         items.append(ClosureMenuItem("This PC", image: IconFactory.navIcon(.thisPC)) { [weak self] in self?.navigate(to: .thisPC) })
@@ -513,7 +517,8 @@ final class ExplorerViewController: NSViewController, NSSplitViewDelegate, NSMen
         guard !showingTiles else { return }
         groups = Arranger.arrange(allItems, state: state)
         guard let list = currentList else { return }
-        list.reload(groups, state: state, search: location.isSearch)
+        let cloud = location.scopeURL.flatMap { CloudDrive.root(containing: $0) } != nil
+        list.reload(groups, state: state, search: location.isSearch, cloud: cloud)
         if let select, !select.isEmpty { list.select(paths: select, scroll: true) }
         if let r = pendingRename, allItems.contains(where: { $0.path == r }) {
             pendingRename = nil
@@ -809,7 +814,7 @@ final class ExplorerViewController: NSViewController, NSSplitViewDelegate, NSMen
         var files: [URL] = []
         for it in items {
             if it.isDirectory {
-                folders.append(it.url)
+                folders.append(it.isLink ? it.url.resolvingSymlinksInPath() : it.url)
             } else if it.isAlias, let r = try? URL(resolvingAliasFileAt: it.url), r.isDirectoryOnDisk, !r.isPackageOnDisk {
                 folders.append(r)
             } else {
@@ -1093,6 +1098,29 @@ final class ExplorerViewController: NSViewController, NSSplitViewDelegate, NSMen
         if !made.isEmpty { refresh(select: Set(made)) }
     }
 
+    /// OneDrive "Always keep on this device" / "Free up space".
+    func setOffline(_ items: [FileItem], keep: Bool) {
+        let fm = FileManager.default
+        var failures: [String] = []
+        for it in items {
+            var targets = [it.url]
+            if it.isDirectory, let en = fm.enumerator(at: it.url, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
+                while let u = en.nextObject() as? URL { targets.append(u) }
+            }
+            for u in targets {
+                do {
+                    if keep { try fm.startDownloadingUbiquitousItem(at: u) } else if !u.isDirectoryOnDisk { try fm.evictUbiquitousItem(at: u) }
+                } catch {
+                    if failures.count < 5 { failures.append("\(u.lastPathComponent): \(error.localizedDescription)") }
+                }
+            }
+        }
+        if !failures.isEmpty { Alerts.show(keep ? "Couldn't download some items" : "Couldn't free up space", failures.joined(separator: "\n")) }
+        for delay in [1.5, 4.0, 10.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.refresh() }
+        }
+    }
+
     @objc func togglePin(_ sender: Any?) {
         let dirs = selectedItems.filter(\.isDirectory)
         let targets = dirs.isEmpty ? (currentFolder.map { [$0] } ?? []) : dirs.map(\.url)
@@ -1336,6 +1364,15 @@ final class ExplorerViewController: NSViewController, NSSplitViewDelegate, NSMen
         }
         if items.count == 1 && items[0].isImage {
             m.addItem(ClosureMenuItem("Set as desktop background", symbol: "photo") { [weak self] in self?.setDesktopBackground() })
+        }
+        if items.contains(where: { $0.syncStatus != .none }) {
+            m.addItem(.separator())
+            m.addItem(ClosureMenuItem("Always keep on this device", symbol: "checkmark.circle") { [weak self] in
+                self?.setOffline(items, keep: true)
+            })
+            m.addItem(ClosureMenuItem("Free up space", symbol: "cloud") { [weak self] in
+                self?.setOffline(items, keep: false)
+            })
         }
         m.addItem(.separator())
         m.addItem(ClosureMenuItem("Compress to ZIP file", symbol: "doc.zipper") { [weak self] in self?.compressSelection(nil) })

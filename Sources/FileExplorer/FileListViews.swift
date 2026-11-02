@@ -15,7 +15,7 @@ protocol FileListDelegate: AnyObject {
 protocol FileListView: AnyObject {
     var view: NSView { get }
     var delegate: FileListDelegate? { get set }
-    func reload(_ groups: [ItemGroup], state: FolderViewState, search: Bool)
+    func reload(_ groups: [ItemGroup], state: FolderViewState, search: Bool, cloud: Bool)
     var selectedItems: [FileItem] { get }
     func select(paths: Set<String>, scroll: Bool)
     func selectAllItems()
@@ -336,6 +336,27 @@ final class TextCell: NSTableCellView {
     required init?(coder: NSCoder) { fatalError() }
 }
 
+final class StatusCell: NSTableCellView {
+    static let id = NSUserInterfaceItemIdentifier("StatusCell")
+    let icon = NSImageView()
+
+    init() {
+        super.init(frame: .zero)
+        identifier = Self.id
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        icon.imageScaling = .scaleProportionallyDown
+        addSubview(icon)
+        NSLayoutConstraint.activate([
+            icon.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            icon.centerYAnchor.constraint(equalTo: centerYAnchor),
+            icon.widthAnchor.constraint(equalToConstant: 16),
+            icon.heightAnchor.constraint(equalToConstant: 16),
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+}
+
 final class GroupHeaderView: FlippedView {
     var title = "" { didSet { needsDisplay = true } }
     var leftInset: CGFloat = 14
@@ -363,12 +384,13 @@ final class DetailsListView: NSView, FileListView, NSTableViewDataSource, NSTabl
     private var rows: [Row] = []
     private var state = FolderViewState()
     private var isSearch = false
+    private var isCloud = false
     private var renaming: (item: FileItem, field: NSTextField)?
     private var renameCancelled = false
     private var suppressSelection = false
 
     static let columnSpecs: [(id: String, title: String, width: CGFloat)] = [
-        ("name", "Name", 260), ("modified", "Date modified", 150), ("type", "Type", 150),
+        ("name", "Name", 260), ("status", "Status", 64), ("modified", "Date modified", 150), ("type", "Type", 150),
         ("size", "Size", 90), ("created", "Date created", 165), ("folder", "Folder", 280),
     ]
 
@@ -454,9 +476,10 @@ final class DetailsListView: NSView, FileListView, NSTableViewDataSource, NSTabl
 
     private var rowHeight: CGFloat { Settings.shared.compactView ? 24 : 30 }
 
-    func reload(_ groups: [ItemGroup], state: FolderViewState, search: Bool) {
+    func reload(_ groups: [ItemGroup], state: FolderViewState, search: Bool, cloud: Bool) {
         self.state = state
         isSearch = search
+        isCloud = cloud
         var r: [Row] = []
         let grouped = state.groupBy != .none
         for g in groups where !g.items.isEmpty || !grouped {
@@ -477,7 +500,11 @@ final class DetailsListView: NSView, FileListView, NSTableViewDataSource, NSTabl
         visible.insert("name")
         for c in table.tableColumns {
             let id = c.identifier.rawValue
-            c.isHidden = id == "folder" ? !isSearch : !visible.contains(id)
+            switch id {
+            case "folder": c.isHidden = !isSearch
+            case "status": c.isHidden = !isCloud
+            default: c.isHidden = !visible.contains(id)
+            }
             if let h = c.headerCell as? WinHeaderCell {
                 h.sortAscending = SortKey(rawValue: id) == state.sortKey ? state.ascending : nil
             }
@@ -494,7 +521,7 @@ final class DetailsListView: NSView, FileListView, NSTableViewDataSource, NSTabl
             ClosureMenuItem("Size all columns to fit") { [weak self] in self?.sizeToFit(all: true) },
             .separator(),
         ]
-        for spec in Self.columnSpecs where spec.id != "folder" {
+        for spec in Self.columnSpecs where spec.id != "folder" && spec.id != "status" {
             let on = spec.id == "name" || Settings.shared.visibleColumns.contains(spec.id)
             items.append(ClosureMenuItem(spec.title, checked: on, enabled: spec.id != "name") { [weak self] in
                 var v = Settings.shared.visibleColumns
@@ -670,6 +697,12 @@ final class DetailsListView: NSView, FileListView, NSTableViewDataSource, NSTabl
                 }
                 cell.field.textColor = dim < 1 ? Theme.tertiaryText : Theme.text
                 cell.toolTip = ItemStyle.tooltip(it)
+                return cell
+            }
+            if id == "status" {
+                let cell = tableView.makeView(withIdentifier: StatusCell.id, owner: nil) as? StatusCell ?? StatusCell()
+                cell.icon.image = IconFactory.syncGlyph(it.syncStatus)
+                cell.toolTip = IconFactory.syncTooltip(it.syncStatus)
                 return cell
             }
             let cell = tableView.makeView(withIdentifier: TextCell.id, owner: nil) as? TextCell ?? TextCell()
@@ -905,6 +938,13 @@ final class FileCellView: FlippedView {
         }
         let dim: CGFloat = (Clipboard.isCut(it.path) || it.isHidden) ? 0.5 : 1
         if let icon { Draw.image(icon, in: iconRect, alpha: dim) }
+        if let badge = IconFactory.syncGlyph(it.syncStatus, size: mode.iconSize >= 48 ? 13 : 10) {
+            let ir = iconRect
+            let b = mode.iconSize >= 32 ? NSRect(x: ir.minX - 2, y: ir.maxY - 14, width: 16, height: 16)
+                                        : NSRect(x: bounds.width - 20, y: (bounds.height - 14) / 2, width: 14, height: 14)
+            if mode.iconSize >= 32 { Draw.rounded(b, 8, fill: Theme.content) }
+            Draw.image(badge, in: b.insetBy(dx: 1, dy: 1))
+        }
         guard renameField == nil else { return }
 
         let name = it.displayName(showExtensions: Settings.shared.showExtensions)
@@ -1095,7 +1135,7 @@ final class GridListView: NSView, FileListView, NSCollectionViewDataSource, NSCo
         }
     }
 
-    func reload(_ groups: [ItemGroup], state: FolderViewState, search: Bool) {
+    func reload(_ groups: [ItemGroup], state: FolderViewState, search: Bool, cloud: Bool) {
         let selected = Set(selectedItems.map(\.path))
         self.groups = groups
         grouped = state.groupBy != .none

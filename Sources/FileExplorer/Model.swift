@@ -65,6 +65,56 @@ enum KnownFolder: String, CaseIterable {
 let homeURL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
 let trashURL = homeURL.appendingPathComponent(".Trash", isDirectory: true)
 
+// MARK: - OneDrive
+
+/// A synced OneDrive account (File Provider folder in ~/Library/CloudStorage).
+struct CloudDrive {
+    let url: URL
+    let title: String
+    let isPersonal: Bool
+
+    static private(set) var all: [CloudDrive] = scan()
+
+    static func refresh() { all = scan() }
+
+    private static func scan() -> [CloudDrive] {
+        let fm = FileManager.default
+        let root = homeURL.appendingPathComponent("Library/CloudStorage", isDirectory: true)
+        let names = (try? fm.contentsOfDirectory(atPath: root.path)) ?? []
+        // Home-folder links like "OneDrive - Air New Zealand" carry the friendly organisation name.
+        var linkNames: [String: String] = [:]
+        for n in (try? fm.contentsOfDirectory(atPath: homeURL.path)) ?? [] where n.hasPrefix("OneDrive") {
+            if let dest = try? fm.destinationOfSymbolicLink(atPath: homeURL.appendingPathComponent(n).path) {
+                linkNames[URL(fileURLWithPath: dest).standardizedFileURL.path] = n
+            }
+        }
+        return names.filter { $0.hasPrefix("OneDrive") }.sorted().compactMap { name in
+            let u = root.appendingPathComponent(name, isDirectory: true)
+            guard u.isDirectoryOnDisk else { return nil }
+            let suffix = name.hasPrefix("OneDrive-") ? String(name.dropFirst("OneDrive-".count)) : ""
+            let personal = suffix.isEmpty || suffix == "Personal"
+            var title = personal ? "OneDrive - Personal" : "OneDrive - \(suffix)"
+            if !personal, let link = linkNames[u.standardizedFileURL.path], link.hasPrefix("OneDrive - ") { title = link }
+            return CloudDrive(url: u.dirNormalized, title: title, isPersonal: personal)
+        }.sorted { ($0.isPersonal ? 0 : 1, $0.title) < ($1.isPersonal ? 0 : 1, $1.title) }
+    }
+
+    /// The OneDrive account containing `url`, if any.
+    static func root(containing url: URL) -> CloudDrive? {
+        let p = url.standardizedFileURL.path
+        return all.first { p == $0.url.path || p.hasPrefix($0.url.path + "/") }
+    }
+
+    static func isRoot(_ url: URL) -> CloudDrive? {
+        all.first { $0.url.path == url.standardizedFileURL.path }
+    }
+
+    var icon: NSImage { IconFactory.cloudIcon(personal: isPersonal) }
+}
+
+/// Windows "Status" column for cloud files.
+enum SyncStatus { case none, onlineOnly, local }
+
 // MARK: - File item
 
 final class FileItem: NSObject {
@@ -72,6 +122,7 @@ final class FileItem: NSObject {
         .nameKey, .isDirectoryKey, .isPackageKey, .isHiddenKey, .isSymbolicLinkKey, .isAliasFileKey,
         .fileSizeKey, .totalFileSizeKey, .contentModificationDateKey, .creationDateKey,
         .contentAccessDateKey, .localizedTypeDescriptionKey, .isVolumeKey,
+        .isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey,
     ]
 
     let url: URL
@@ -89,6 +140,7 @@ final class FileItem: NSObject {
     let created: Date?
     let accessed: Date?
     let typeDescription: String
+    let syncStatus: SyncStatus
 
     init(url: URL) {
         self.url = url
@@ -112,6 +164,15 @@ final class FileItem: NSObject {
         modified = v?.contentModificationDate
         created = v?.creationDate
         accessed = v?.contentAccessDate
+        if v?.isUbiquitousItem == true {
+            switch v?.ubiquitousItemDownloadingStatus {
+            case .some(.notDownloaded): syncStatus = .onlineOnly
+            case .some: syncStatus = .local
+            case .none: syncStatus = .none
+            }
+        } else {
+            syncStatus = .none
+        }
         if dir && !(v?.isPackage ?? false) {
             typeDescription = "File folder"
         } else if (v?.isAliasFile ?? false) && !symlink {
@@ -189,6 +250,7 @@ enum Location: Hashable {
 
     static func icon(for u: URL) -> NSImage {
         if let k = KnownFolder.match(u) { return IconFactory.knownGlyph(k) }
+        if let c = CloudDrive.isRoot(u) { return c.icon }
         if u.path == trashURL.path { return IconFactory.navIcon(.recycleBin) }
         if (try? u.resourceValues(forKeys: [.isVolumeKey]))?.isVolume == true {
             return IconFactory.drive(size: 16, kind: VolumeInfo.kind(for: u))
@@ -199,6 +261,7 @@ enum Location: Hashable {
     static func displayName(for u: URL) -> String {
         if u.path == "/" { return VolumeInfo.name(for: u) }
         if u.path == trashURL.path { return "Recycle Bin" }
+        if let c = CloudDrive.isRoot(u) { return c.title }
         if let k = KnownFolder.match(u), k == .videos { return "Videos" }
         if (try? u.resourceValues(forKeys: [.isVolumeKey]))?.isVolume == true { return VolumeInfo.name(for: u) }
         return u.lastPathComponent

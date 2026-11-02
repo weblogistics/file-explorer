@@ -85,6 +85,15 @@ final class AddressBar: NSView, NSTextFieldDelegate {
 
     static func pathCrumbs(_ u: URL) -> [Crumb] {
         if u.path == trashURL.path { return [Crumb(title: "Recycle Bin", location: .folder(u), menuURL: nil)] }
+        if let cloud = CloudDrive.root(containing: u) {
+            var result = [Crumb(title: cloud.title, location: .dir(cloud.url), menuURL: cloud.url)]
+            var cur = cloud.url
+            for comp in u.path.dropFirst(cloud.url.path.count).split(separator: "/") {
+                cur = cur.appendingPathComponent(String(comp), isDirectory: true)
+                result.append(Crumb(title: String(comp), location: .dir(cur), menuURL: cur))
+            }
+            return result
+        }
         var vol = (try? u.resourceValues(forKeys: [.volumeURLKey]))?.volume ?? URL(fileURLWithPath: "/")
         if !(u.path == vol.path || u.path.hasPrefix(vol.path == "/" ? "/" : vol.path + "/")) { vol = URL(fileURLWithPath: "/") }
         vol = vol.dirNormalized

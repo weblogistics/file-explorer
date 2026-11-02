@@ -33,7 +33,9 @@ Requires the Xcode command line tools (`xcode-select --install`); a full Xcode i
 - **Command bar:** New ▾, Cut, Copy, Paste, Rename, Share, Delete, Sort ▾, View ▾, ⋯, Details
 - **Views:** Extra large / Large / Medium / Small icons, List, Details, Tiles and Content, with thumbnails
 - **Sort and group:** by name, date, type or size (Windows-style date buckets); each folder remembers its view
-- **Navigation pane:** Home, Gallery, pinned Quick access, This PC drive tree, Recycle Bin
+- **Navigation pane:** Home, Gallery, OneDrive accounts, pinned Quick access, This PC drive tree, Recycle Bin
+- **OneDrive:** every synced account (Personal and work/school) with its own breadcrumb root, a Status column
+  and icon badges (online-only / on this device), plus "Always keep on this device" and "Free up space"
 - **Pages:** Home (Quick access and Recent files), This PC (drive capacity bars), Gallery (Pictures by month)
 - **Panes:** Details pane, Preview pane, and Quick Look (Space)
 - **File operations:**

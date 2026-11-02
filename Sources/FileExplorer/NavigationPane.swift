@@ -1,7 +1,7 @@
 import AppKit
 
 final class NavNode: NSObject {
-    enum Kind { case home, gallery, separator, pinned, thisPC, drive, folder, recycleBin }
+    enum Kind { case home, gallery, cloud, separator, pinned, thisPC, drive, folder, recycleBin }
     let kind: Kind
     let url: URL?
     let title: String
@@ -34,7 +34,7 @@ final class NavNode: NSObject {
             children = VolumeInfo.list().map {
                 NavNode(.drive, title: $0.name, url: $0.url, icon: IconFactory.drive(size: 16, kind: $0.kind), expandable: true)
             }
-        case .drive, .folder, .pinned:
+        case .drive, .folder, .pinned, .cloud:
             guard let url else { children = []; return }
             children = DirectoryLoader.subfolders(of: url, showHidden: Settings.shared.showHidden).map {
                 NavNode(.folder, title: $0.lastPathComponent, url: $0.dirNormalized, icon: Location.icon(for: $0), expandable: true)
@@ -234,7 +234,8 @@ final class NavigationPane: NSView, NSOutlineViewDataSource, NSOutlineViewDelega
             let title = KnownFolder.match(u)?.title ?? Location.displayName(for: u)
             return NavNode(.pinned, title: title, url: u.dirNormalized, icon: Location.icon(for: u), expandable: true)
         }
-        roots = [homeNode, galleryNode, NavNode(.separator)] + pinned + [NavNode(.separator), thisPCNode, recycleNode]
+        let clouds = CloudDrive.all.map { NavNode(.cloud, title: $0.title, url: $0.url, icon: $0.icon, expandable: true) }
+        roots = [homeNode, galleryNode] + clouds + [NavNode(.separator)] + pinned + [NavNode(.separator), thisPCNode, recycleNode]
     }
 
     @objc private func pinsChanged() {
@@ -251,6 +252,7 @@ final class NavigationPane: NSView, NSOutlineViewDataSource, NSOutlineViewDelega
     }
 
     func refreshTree() {
+        CloudDrive.refresh()
         let expanded = outline.isItemExpanded(thisPCNode)
         thisPCNode.children = nil
         rebuild()

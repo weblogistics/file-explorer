@@ -153,6 +153,31 @@ enum IconFactory {
         return img
     }
 
+    static func cloudIcon(personal: Bool, size: CGFloat = 13) -> NSImage {
+        let key = "cloud-\(personal)-\(size)"
+        if let c = cache[key] { return c }
+        let img = Sym.colored("cloud.fill", size: size, color: NSColor(hex: personal ? 0x0078D4 : 0x0364B8))
+        cache[key] = img
+        return img
+    }
+
+    /// Small Windows-style sync status glyph (blue cloud = online-only, green check = on this device).
+    static func syncGlyph(_ s: SyncStatus, size: CGFloat = 12) -> NSImage? {
+        switch s {
+        case .none: return nil
+        case .onlineOnly: return Sym.colored("cloud", size: size, color: NSColor(hex: 0x0078D4), weight: .semibold)
+        case .local: return Sym.colored("checkmark.circle", size: size, color: NSColor(hex: 0x13A10E), weight: .semibold)
+        }
+    }
+
+    static func syncTooltip(_ s: SyncStatus) -> String {
+        switch s {
+        case .none: return ""
+        case .onlineOnly: return "Available when online"
+        case .local: return "Available on this device"
+        }
+    }
+
     // MARK: App icon
 
     static func writeIconset(to dir: URL) {
