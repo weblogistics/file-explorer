@@ -263,7 +263,19 @@ final class ClosureMenuItem: NSMenuItem {
         isEnabled = enabled && handler != nil
     }
 
-    required init(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    /// AppKit uses this when copying menu items; the copy keeps the title but has no handler.
+    override init(title string: String, action selector: Selector?, keyEquivalent charCode: String) {
+        super.init(title: string, action: selector, keyEquivalent: charCode)
+    }
+
+    required init(coder: NSCoder) { super.init(coder: coder) }
+
+    override func copy(with zone: NSZone? = nil) -> Any {
+        let c = super.copy(with: zone)
+        (c as? ClosureMenuItem)?.handler = handler
+        (c as? ClosureMenuItem)?.target = c as AnyObject
+        return c
+    }
 
     @objc private func fire() { handler?() }
 }

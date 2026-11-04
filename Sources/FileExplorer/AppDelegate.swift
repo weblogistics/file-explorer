@@ -262,6 +262,16 @@ enum DebugSnapshot {
         case "tab": (NSApp.windows.compactMap { $0.windowController as? ExplorerWindowController }.first)?.addTab(.dir(homeURL))
         case "group": vc?.groupBy(GroupBy(rawValue: arg) ?? .none)
         case "search": vc?.debugSearch(arg)
+        case "allmenus":
+            guard let vc else { return }
+            func walk(_ m: NSMenu) -> Int { m.items.reduce(1) { n, i in _ = i.copy(); return n + 1 + (i.submenu.map(walk) ?? 0) } }
+            let file = FileItem(url: vc.location.scopeURL!.appendingPathComponent(arg))
+            let dir = FileItem(url: vc.location.scopeURL!)
+            var total = 0
+            for m in [vc.backgroundMenu(), vc.itemMenu([file]), vc.itemMenu([dir]), vc.itemMenu([file, dir]),
+                      vc.newMenu(), vc.viewMenu(), vc.sortMenu(), vc.moreMenu()] { total += walk(m) }
+            if let m = vc.tilesMenu([]) { total += walk(m) }
+            print("ALL MENUS OK, items:", total)
         case "light": NSApp.appearance = NSAppearance(named: .aqua)
         case "selftest": SelfTest.run(dir: URL(fileURLWithPath: arg))
         case "select": vc?.debugSelect(arg)

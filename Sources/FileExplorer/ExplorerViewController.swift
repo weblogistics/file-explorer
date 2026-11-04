@@ -1230,6 +1230,13 @@ final class ExplorerViewController: NSViewController, NSSplitViewDelegate, NSMen
         ])
     }
 
+    /// Moves items out of a menu so they can be placed in another (avoids copying closure items).
+    private func detachedItems(_ menu: NSMenu) -> [NSMenuItem] {
+        let items = menu.items
+        menu.removeAllItems()
+        return items
+    }
+
     func viewMenuItems() -> [NSMenuItem] {
         var items: [NSMenuItem] = ViewMode.allCases.map { m in
             ClosureMenuItem(m.title, symbol: m.symbol, key: "\(m.rawValue + 1)", checked: state.mode == m && !showingTiles,
@@ -1416,7 +1423,7 @@ final class ExplorerViewController: NSViewController, NSSplitViewDelegate, NSMen
             .separator(),
             ClosureMenuItem("Open in Terminal", symbol: "terminal") { [weak self] in self?.openInTerminal(nil) },
             .separator(),
-            NSMenu.sub("New", symbol: "plus.circle", newMenu().items.map { $0.copy() as! NSMenuItem }),
+            NSMenu.sub("New", symbol: "plus.circle", detachedItems(newMenu())),
             .separator(),
             ClosureMenuItem("Properties", symbol: "info.circle", key: "i") { [weak self] in self?.showProperties(nil) },
         ])
@@ -1701,7 +1708,11 @@ final class QuickActionsView: NSView {
         super.init(frame: NSRect(x: 0, y: 0, width: 16 + CGFloat(actions.count) * 44, height: 40))
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    /// Menu item copies archive their view; a copied row simply has no actions.
+    required init?(coder: NSCoder) {
+        actions = []
+        super.init(coder: coder)
+    }
     override var isFlipped: Bool { true }
 
     private func rect(_ i: Int) -> NSRect { NSRect(x: 10 + CGFloat(i) * 44, y: 3, width: slot, height: 34) }
